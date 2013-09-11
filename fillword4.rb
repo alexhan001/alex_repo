@@ -3,6 +3,7 @@ require 'RMagick'
 
 Face = RUBY_PLATFORM =~ /mswin/ ? 'Verdana': 'Times'
 
+#單字類別
 class CWord
 	def initialize(word, canvasWidth, canvasHeight)
 		@m_Word=word
@@ -18,6 +19,7 @@ class CWord
 	attr_accessor :m_Top
 	attr_accessor :m_WordImg
 	
+	#產生單字影像
 	def GenWordImg(size, color)
 		@m_Size=size
 		@m_Color=color
@@ -67,6 +69,7 @@ class CWord
 	end
 end
 
+#畫布類別
 class CCanvas
 	def initialize(fileName)
 		@m_File=fileName
@@ -75,7 +78,9 @@ class CCanvas
 	end
 	attr_accessor :m_Canvas
 	attr_accessor :m_DrawOK
-	def findArea
+	
+	#找出可以填字的最大矩形區域
+	def findMaxArea
 		pixels = @m_Canvas.get_pixels(0,0,@m_Canvas.columns,@m_Canvas.rows)
 		cnt=0
 		minX=9999
@@ -106,6 +111,8 @@ class CCanvas
 		@m_AreaWidth=maxX-minX+1
 		@m_AreaHeight=maxY-minY+1
 	end
+	
+	#隨機找適合的位置填字
 	def randomDraw(tryTimes, wordObject)
 		find=0
 		cnt=0
@@ -138,20 +145,26 @@ class CCanvas
 			@m_DrawOK=0
 		end	
 	end
+	
+	#輸出影像到檔案
 	def outputImage(fileName)
 		@m_Canvas.write(fileName)
 	end
+	
+	#複製影像
 	def copyPixels(destination)
 		pixels=@m_Canvas.get_pixels(0,0,@m_Canvas.columns,@m_Canvas.rows)
 		destination.store_pixels(0,0,@m_Canvas.columns,@m_Canvas.rows,pixels)	
 	end
-	def scanDraw(ratio, wordObject)
+	
+	#掃描可以填字的最大矩形區域找出適合的位置填字, 將影像縮小可以減少掃描的次數
+	def scanDraw(ratio, wordObject) #ratio影像縮小比率
 		pixels = @m_Canvas.get_pixels(@m_AreaLeft,@m_AreaTop,@m_AreaWidth,@m_AreaHeight)	
 		areaImg = Magick::Image.new(@m_AreaWidth,@m_AreaHeight,Magick::HatchFill.new('white'))
 		areaImg.store_pixels(0,0,areaImg.columns,areaImg.rows,pixels)	
 		smallImg=areaImg.scale(areaImg.columns*ratio, areaImg.rows*ratio)
 		wordImg=wordObject.m_WordImg.scale(wordObject.m_Width*ratio, wordObject.m_Height*ratio)
-#		
+		
 		@m_DrawOK=0
 		find=0
 		for i in (0..smallImg.rows-wordImg.rows-1)
@@ -182,16 +195,16 @@ class CCanvas
 			puts "Scan skip " + wordObject.m_Word
 			@m_DrawOK=0
 		end
-#		
 	end
 end
 
-#Main Program
-canvas=CCanvas.new("mask2.jpg")
-canvas.findArea()
+#主程式
+canvas=CCanvas.new("mask2.jpg") #讀取罩遮影像
+canvas.findMaxArea() #找出可以填字的最大矩形區域
 canvasResult=Magick::Image.new(canvas.m_Canvas.columns,canvas.m_Canvas.rows,Magick::HatchFill.new('white'))
-canvas.copyPixels(canvasResult)
-	
+canvas.copyPixels(canvasResult) #將初始影像複製到一暫存影像
+
+#建立單字陣列	
 wordArray=Array.new()
 wordArray[0]='I'
 wordArray[1]='Love'
@@ -202,41 +215,42 @@ for i in (0..(totalWord-1))
 	wordObject[i]=CWord.new(wordArray[i],canvas.m_Canvas.columns,canvas.m_Canvas.rows)
 end
 	
-levelCnt=0
-fontSize=120
-while(fontSize>=5)
+levelCnt=0 #計算繪圖迴圈跑幾次
+fontSize=120 #初始最大字形尺寸
+while(fontSize>=5) #繪圖迴圈結束條件
 	puts "Font size " + fontSize.to_s
 	for p in (0..levelCnt)
 		if(levelCnt==0)
-			color="#ff0000"
-		else
+			color="#ff0000" #最大的字給紅色
+		else #其他隨機
 			color="##{"%02x" % (rand * 0xff) }#{"%02x" % (rand * 0xff) }#{"%02x" % (rand * 0xff) }" 
 		end
 		cnt=0
 		for i in (0..(totalWord-1))
-			wordObject[i].GenWordImg(fontSize,color)
-			canvas.randomDraw(100, wordObject[i])
-			if(canvas.m_DrawOK==0)
-				canvas.scanDraw(0.4, wordObject[i])
+			wordObject[i].GenWordImg(fontSize,color) #產生單字影像
+			canvas.randomDraw(100, wordObject[i]) #先用隨機填字
+			if(canvas.m_DrawOK==0) #若沒找到地方填字
+				canvas.scanDraw(0.4, wordObject[i]) #再用掃描填字
 				if(canvas.m_DrawOK==1)
-					cnt=cnt+1
+					cnt=cnt+1 #若成功時計數器加一
 				else
-					break
+					break #若失敗時此一尺寸的字都不用再試了
 				end
 			else
 				cnt=cnt+1
 			end
 		end
-		if(cnt==totalWord)
-			canvas.copyPixels(canvasResult)
-			canvasResult.write("result.jpg")
-		else
+		if(cnt==totalWord) #若計數器等於所有單字數, 表示此一尺寸的這一次繪圖所有單字都可以填入
+			canvas.copyPixels(canvasResult) #將影像複製到站存影像
+			canvasResult.write("result.jpg") #將影像輸出供觀察
+		else #若計數器不等於所有單字數, 表示此一尺寸的這一次繪圖的某些單字無法填入, 將暫存影像複製回工作影像
 			pixels=canvasResult.get_pixels(0,0,canvasResult.columns,canvasResult.rows)
 			canvas.m_Canvas.store_pixels(0,0,canvasResult.columns,canvasResult.rows,pixels)
 			puts "Skip font size " + fontSize.to_s
 			break
 		end
 	end
+	#每一繪圖迴圈的字體縮小規則
 	if(levelCnt==0)
 		fontSize=fontSize-fontSize/3
 	else
